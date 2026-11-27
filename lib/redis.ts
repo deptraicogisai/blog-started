@@ -1,29 +1,37 @@
+
 import IORedis, { Redis } from "ioredis";
 
-function fixUrl(url: string) {
-  if (!url) {
-    return "";
-  }
-  if (url.startsWith("redis://") && !url.startsWith("redis://:")) {
-    return url.replace("redis://", "redis://:");
-  }
-  if (url.startsWith("rediss://") && !url.startsWith("rediss://:")) {
-    return url.replace("rediss://", "rediss://:");
-  }
-  return url;
-}
-
 class ClientRedis {
-  static instance: Redis;
+  private static instance: Redis | null = null;
 
   constructor() {
-    throw new Error("Use Singleton.getInstance()");
+    throw new Error("Use ClientRedis.getInstance()");
   }
 
-  static getInstance(): Redis | null {
+  static getInstance(): Redis {
     if (!ClientRedis.instance) {
-      ClientRedis.instance = new IORedis(fixUrl(process.env.REDIS_URL!));
+      const redisUrl = process.env.REDIS_URL;
+
+      if (!redisUrl) {
+        throw new Error("REDIS_URL is not configured");
+      }
+
+      ClientRedis.instance = new IORedis(redisUrl, {
+        maxRetriesPerRequest: 3,
+        retryStrategy(times) {
+          return Math.min(times * 500, 5000);
+        },
+      });
+
+      ClientRedis.instance.on("connect", () => {
+        console.log("[Redis] Connected successfully");
+      });
+
+      ClientRedis.instance.on("error", (error) => {
+        console.error("[Redis] Connection error:", error.message);
+      });
     }
+
     return ClientRedis.instance;
   }
 }
